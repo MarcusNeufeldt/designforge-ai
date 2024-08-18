@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DesignForge AI</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        h1, h2, h3, h4, h5, h6 { font-family: 'Poppins', sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        /* Custom Select2 Styles */
+        .select2-container--default .select2-selection--multiple {
+            border-color: #e2e8f0;
+            border-radius: 0.375rem;
+            padding: 0.25rem;
+        }
+        .select2-container--default.select2-container--focus .select2-selection--multiple {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
+        }
+        .select2-container--default .select2-selection--multiple .select2-selection__choice {
+            background-color: #3b82f6;
+            border: none;
+            color: white;
+            border-radius: 0.25rem;
+            padding: 2px 8px;
+            margin-top: 4px;
+            margin-right: 4px;
+        }
+        .select2-container--default .select2-selection__choice__remove {
+            color: white;
+            margin-right: 5px;
+        }
+        .select2-container--default .select2-search--inline .select2-search__field {
+            margin-top: 3px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app" class="container mx-auto px-4 py-8">
+        <header class="mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">DesignForge AI</h1>
+            <p class="text-gray-600">Compare and iterate on HTML designs using various Language Models</p>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-8">
+            <div class="md:col-span-1">
+                <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+                    <h3 class="text-xl font-semibold text-gray-700 mb-4">Select LLMs</h3>
+                    <div v-if="fetchingLLMs" class="text-gray-600">Loading models...</div>
+                    <div v-if="llmFetchError" class="text-red-600">{{ llmFetchError }}</div>
+                    <select id="llm-select" multiple class="w-full">
+                        <option v-for="llm in availableLLMs" :value="llm">{{ llm }}</option>
+                    </select>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-xl font-semibold text-gray-700 mb-4">Recent Prompts</h3>
+                    <ul class="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+                        <li v-for="(prompt, index) in promptHistory" :key="index"
+                            @click="setPrompt(prompt)"
+                            class="cursor-pointer hover:bg-gray-100 p-2 rounded transition duration-150 ease-in-out truncate">
+                            {{ prompt }}
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="md:col-span-4">
+                <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+                    <div class="mb-4">
+                        <label for="prompt" class="block text-sm font-medium text-gray-700 mb-2">Enter your HTML design prompt</label>
+                        <textarea id="prompt" v-model="prompt" rows="4"
+                            class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-gray-50"
+                            placeholder="Describe the HTML design you want to generate..."></textarea>
+                    </div>
+                    <div class="flex space-x-4">
+                        <button @click="compare" :disabled="isLoading"
+                            class="flex-grow bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
+                            {{ isLoading ? 'Processing...' : 'Compare Designs' }}
+                        </button>
+                        <button @click="openHtmlInjectionModal"
+                            class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg transition duration-150 ease-in-out">
+                            Inject HTML
+                        </button>
+                        <button @click="previewInjectedHtml"
+                            :disabled="!injectedHtml"
+                            :class="[
+                                'text-white font-bold py-3 px-6 rounded-lg transition duration-150 ease-in-out',
+                                injectedHtml ? 'bg-purple-500 hover:bg-purple-600' : 'bg-gray-400 cursor-not-allowed'
+                            ]">
+                            Preview Injected
+                        </button>
+                    </div>
+                </div>
+
+                <div v-if="isLoading" class="text-center py-12">
+                    <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                    <p class="text-gray-600">Generating designs... This may take a moment.</p>
+                </div>
+
+                <div v-if="results.length" class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div v-for="(result, index) in results" :key="result.llm" class="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+                        <div class="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <h2 class="text-xl font-bold">{{ result.llm }}</h2>
+                                    <div class="text-sm opacity-75">
+                                        Response Time: {{ result.response_time }}s | Token Count: {{ result.token_count }}
+                                    </div>
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button @click="openFullScreenView(result)" class="text-white hover:text-gray-200 transition duration-150 ease-in-out" title="Full Screen">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                        </svg>
+                                    </button>
+                                    <button @click="deleteResult(index)" class="text-white hover:text-gray-200 transition duration-150 ease-in-out" title="Delete">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-if="result.error" class="p-4 bg-red-100 text-red-700">
+                            Error: {{ result.error }}
+                        </div>
+                        <div v-else class="p-4">
+                            <div class="mb-4">
+                                <h3 class="text-lg font-semibold text-gray-700 mb-2">Rendered Preview</h3>
+                                <div class="border border-gray-200 rounded-lg overflow-hidden">
+                                    <iframe :srcdoc="result.content" class="w-full h-64 border-none"></iframe>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 @click="toggleCode(index)" class="text-lg font-semibold text-gray-700 mb-2 cursor-pointer flex items-center">
+                                    <span>Generated Code</span>
+                                    <svg :class="['ml-2 h-5 w-5 transform transition-transform', { 'rotate-180': codeVisible[index] }]" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                    </svg>
+                                </h3>
+                                <div :class="['overflow-hidden transition-all duration-300 ease-in-out', { 'max-h-0': !codeVisible[index], 'max-h-screen': codeVisible[index] }]">
+                                    <div class="relative bg-gray-100 p-4 rounded-lg">
+                                        <button @click="copyCode(result.content)" class="absolute top-2 right-2 bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-sm">
+                                            Copy Code
+                                        </button>
+                                        <pre class="text-sm overflow-x-auto custom-scrollbar"><code>{{ result.content }}</code></pre>
+                                    </div>
+                                </div>
+                            </div>
+                            <button @click="openReiterationModal(result.llm, result.content)"
+                                class="mt-4 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150 ease-in-out">
+                                Refine with this LLM
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showReiterationModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-lg max-w-lg w-full">
+                <div class="p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-bold text-gray-800">Refine with {{ reiterationLLM }}</h2>
+                        <button @click="closeReiterationModal" class="text-gray-600 hover:text-gray-800">
+                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <p class="mb-4 text-gray-600">Original prompt: {{ prompt }}</p>
+                    <textarea v-model="reiterationPrompt"
+                        placeholder="Describe the changes or additions you want to make to the design"
+                        rows="4"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+                    <button @click="reiterate"
+                        class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150 ease-in-out w-full">
+                        Submit Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showHtmlInjectionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-lg max-w-lg w-full">
+                <div class="p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-bold text-gray-800">Inject HTML Code</h2>
+                        <button @click="closeHtmlInjectionModal" class="text-gray-600 hover:text-gray-800">
+                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <textarea v-model="injectedHtml"
+                        placeholder="Paste your HTML code here"
+                        rows="10"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+                    <button @click="injectHtml"
+                        class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150 ease-in-out w-full">
+                        Inject HTML
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showHtmlPreviewModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-lg max-w-4xl w-full">
+                <div class="p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-bold text-gray-800">Injected HTML Preview</h2>
+                        <button @click="closeHtmlPreviewModal" class="text-gray-600 hover:text-gray-800">
+                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="border border-gray-300 rounded-lg p-4">
+                        <iframe :srcdoc="injectedHtml" class="w-full h-96 border-none"></iframe>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showFullScreenModal" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-lg w-full h-full max-w-7xl max-h-[90vh] flex flex-col">
+                <div class="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4 flex justify-between items-center">
+                    <h2 class="text-2xl font-bold">{{ fullScreenContent.llm }}</h2>
+                    <button @click="closeFullScreenView" class="text-white hover:text-gray-200">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="flex-grow overflow-hidden">
+                    <iframe :srcdoc="fullScreenContent.content" class="w-full h-full border-none"></iframe>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
